@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <title>TripLine Scanner</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #161616;
+      --surface2: #222222;
+      --accent: #e8c84a;
+      --accent-dim: #b89c2e;
+      --text: #f0f0f0;
+      --text-muted: #888;
+      --danger: #e05252;
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+
+    #app {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    /* ── Screens ── */
+    .screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      max-width: 420px;
+      gap: 24px;
+      animation: fadeIn 0.25s ease;
+    }
+    .screen.active { display: flex; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Logo / Title ── */
+    .logo {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .logo-icon {
+      width: 72px;
+      height: 72px;
+      border-radius: 20px;
+      background: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+    }
+    .logo-title {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: var(--text);
+    }
+    .logo-sub {
+      font-size: 14px;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      width: 100%;
+      padding: 18px 24px;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 17px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.1s ease, opacity 0.1s ease;
+      -webkit-tap-highlight-color: transparent;
+      letter-spacing: 0.02em;
+    }
+    .btn:active { transform: scale(0.97); opacity: 0.85; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #0a0a0a;
+    }
+    .btn-secondary {
+      background: var(--surface2);
+      color: var(--text);
+    }
+    .btn-open {
+      background: var(--accent);
+      color: #0a0a0a;
+      font-size: 20px;
+      padding: 22px 24px;
+      border-radius: var(--radius);
+    }
+
+    /* ── Scanner screen ── */
+    #scanner-wrapper {
+      width: 100%;
+      background: var(--surface);
+      border-radius: var(--radius);
+      overflow: hidden;
+      position: relative;
+      aspect-ratio: 1 / 1;
+    }
+
+    /* html5-qrcode injects a video element; make it fill the box */
+    #qr-reader {
+      width: 100% !important;
+      height: 100% !important;
+    }
+    #qr-reader video {
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover !important;
+    }
+    /* hide the default html5-qrcode UI chrome */
+    #qr-reader img,
+    #qr-reader > div > span,
+    #qr-reader__scan_region > img,
+    #qr-reader__dashboard,
+    #qr-reader__header_message {
+      display: none !important;
+    }
+
+    /* viewfinder overlay */
+    .viewfinder {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .viewfinder-box {
+      width: 65%;
+      aspect-ratio: 1 / 1;
+      border: 3px solid var(--accent);
+      border-radius: 12px;
+      box-shadow: 0 0 0 2000px rgba(0,0,0,0.45);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { border-color: var(--accent); }
+      50%       { border-color: var(--accent-dim); }
+    }
+
+    .scan-hint {
+      font-size: 13px;
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    /* ── Result screen ── */
+    .result-card {
+      width: 100%;
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 28px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      text-align: center;
+    }
+    .result-check {
+      font-size: 48px;
+      line-height: 1;
+    }
+    .result-label {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    .result-ready {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* ── Error screen ── */
+    .error-card {
+      width: 100%;
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 28px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      text-align: center;
+    }
+    .error-icon { font-size: 42px; }
+    .error-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--danger);
+    }
+    .error-body {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+    .error-body strong { color: var(--text); }
+
+    /* ── Footer hint ── */
+    .tip {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.6;
+      padding: 0 8px;
+    }
+    .tip span { color: var(--accent); font-weight: 600; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ① START SCREEN -->
+  <section class="screen active" id="screen-start">
+    <div class="logo">
+      <div class="logo-icon">🎵</div>
+      <div class="logo-title">TripLine</div>
+      <div class="logo-sub">Card Scanner</div>
+    </div>
+    <button class="btn btn-primary" onclick="startScanner()">Scan Card</button>
+    <p class="tip">
+      Avoid <span>strong light reflections</span> on the card —<br>
+      they can prevent the camera from reading the QR code.
+    </p>
+  </section>
+
+  <!-- ② SCANNER SCREEN -->
+  <section class="screen" id="screen-scanner">
+    <div id="scanner-wrapper">
+      <div id="qr-reader"></div>
+      <div class="viewfinder">
+        <div class="viewfinder-box"></div>
+      </div>
+    </div>
+    <p class="scan-hint">Hold the card steady inside the frame</p>
+    <button class="btn btn-secondary" onclick="cancelScanner()">Cancel</button>
+  </section>
+
+  <!-- ③ RESULT SCREEN -->
+  <section class="screen" id="screen-result">
+    <div class="result-card">
+      <div class="result-check">🎶</div>
+      <div class="result-label">Card scanned</div>
+      <div class="result-ready">Ready to play!</div>
+    </div>
+    <button class="btn btn-open" id="btn-open" onclick="openSong()">▶ Open Song</button>
+    <button class="btn btn-secondary" onclick="scanNext()">Scan Next Card</button>
+  </section>
+
+  <!-- ④ ERROR SCREEN -->
+  <section class="screen" id="screen-error">
+    <div class="error-card">
+      <div class="error-icon">📷</div>
+      <div class="error-title" id="error-title">Camera access denied</div>
+      <div class="error-body" id="error-body"></div>
+    </div>
+    <button class="btn btn-primary" onclick="showScreen('screen-start')">Try Again</button>
+  </section>
+
+</div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────
+  let html5QrCode = null;
+  let scannedUrl   = null;
+
+  // ── Screen helpers ─────────────────────────────────────────────────────
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  // ── Scanner ─────────────────────────────────────────────────────────────
+  async function startScanner() {
+    showScreen('screen-scanner');
+
+    // Destroy previous instance if any
+    if (html5QrCode) {
+      try { await html5QrCode.stop(); } catch (_) {}
+      html5QrCode = null;
+    }
+
+    html5QrCode = new Html5Qrcode('qr-reader', { verbose: false });
+
+    const config = {
+      fps: 15,
+      qrbox: { width: 220, height: 220 },
+      aspectRatio: 1.0,
+      // Force rear camera
+      videoConstraints: {
+        facingMode: { exact: 'environment' }
+      }
+    };
+
+    try {
+      await html5QrCode.start(
+        { facingMode: { exact: 'environment' } },
+        config,
+        onScanSuccess,
+        /* onScanFailure */ () => {}
+      );
+    } catch (err) {
+      // Fallback: try without exact constraint (desktop / front-camera devices)
+      try {
+        await html5QrCode.start(
+          { facingMode: 'environment' },
+          { ...config, videoConstraints: { facingMode: 'environment' } },
+          onScanSuccess,
+          () => {}
+        );
+      } catch (err2) {
+        handleCameraError(err2);
+      }
+    }
+  }
+
+  function onScanSuccess(decodedText) {
+    // Vibrate for haptic feedback if supported
+    if (navigator.vibrate) navigator.vibrate(60);
+
+    scannedUrl = decodedText;
+    stopScanner().then(() => showScreen('screen-result'));
+  }
+
+  async function stopScanner() {
+    if (html5QrCode) {
+      try { await html5QrCode.stop(); } catch (_) {}
+      html5QrCode = null;
+    }
+  }
+
+  async function cancelScanner() {
+    await stopScanner();
+    showScreen('screen-start');
+  }
+
+  // ── Error handling ──────────────────────────────────────────────────────
+  function handleCameraError(err) {
+    stopScanner();
+
+    const msg = (err && err.message) ? err.message.toLowerCase() : String(err).toLowerCase();
+    let title = 'Camera access denied';
+    let body  = '';
+
+    if (msg.includes('permission') || msg.includes('notallowed') || msg.includes('denied')) {
+      title = 'Camera access denied';
+      body  = `To play, you need to grant camera access.<br><br>
+               <strong>On iPhone/iPad:</strong> Settings → Safari → Camera → Allow<br><br>
+               <strong>On Android:</strong> tap the 🔒 icon in the address bar → Permissions → Camera → Allow<br><br>
+               Then return here and tap <strong>Try Again</strong>.`;
+    } else if (msg.includes('notfound') || msg.includes('no camera') || msg.includes('no device')) {
+      title = 'No camera found';
+      body  = 'This device does not appear to have a rear camera. Please use a mobile phone or tablet.';
+    } else if (msg.includes('notreadable') || msg.includes('in use')) {
+      title = 'Camera in use';
+      body  = 'Another app is using the camera. Close it and try again.';
+    } else {
+      title = 'Camera unavailable';
+      body  = `Could not start the camera.<br><br>Make sure you're using HTTPS and that no other app is using the camera.<br><br><em>${err}</em>`;
+    }
+
+    document.getElementById('error-title').textContent = title;
+    document.getElementById('error-body').innerHTML   = body;
+    showScreen('screen-error');
+  }
+
+  // ── Result actions ──────────────────────────────────────────────────────
+  function openSong() {
+    if (scannedUrl) {
+      // Open in new tab; DJ turns phone away before revealing screen
+      window.open(scannedUrl, '_blank', 'noopener,noreferrer');
+    }
+  }
+
+  function scanNext() {
+    scannedUrl = null;
+    startScanner();
+  }
+</script>
+</body>
+</html>
