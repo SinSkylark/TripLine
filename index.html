@@ -387,8 +387,10 @@ let countdownSec    = 30;
 let countdownTimer  = null;
 let ytPlayer        = null;
 let ytPlayerReady   = false;
+let ytApiBlocked    = false;  // true if Brave/uBlock blocks youtube API script
 let audioEl         = null;
 let pendingPlay     = false;  // play as soon as YT player is ready
+let pendingTimer    = null;   // timeout — fallback if API never loads
 
 // ═══════════════════════════════════════════════════════
 //  INIT
@@ -578,6 +580,7 @@ function preparePlayer() {
 function loadYouTubeAPI() {
   const tag = document.createElement('script');
   tag.src = 'https://www.youtube.com/iframe_api';
+  tag.onerror = () => { ytApiBlocked = true; };
   document.head.appendChild(tag);
 }
 
@@ -624,6 +627,7 @@ function preloadYouTube(videoId) {
 
 function onYTReady() {
   ytPlayerReady = true;
+  if (pendingTimer) { clearTimeout(pendingTimer); pendingTimer = null; }
   if (pendingPlay) {
     pendingPlay = false;
     executeYouTubePlay();
@@ -722,6 +726,21 @@ function tapPlay() {
       // Player still loading — set flag, countdown starts in onYTReady → executeYouTubePlay
       pendingPlay = true;
       document.getElementById('countdown-number').textContent = '…';
+
+      // Safety net: if API never loads (Brave Shields / uBlock), surface fallback after 4s
+      if (pendingTimer) clearTimeout(pendingTimer);
+      pendingTimer = setTimeout(() => {
+        if (!pendingPlay) return;   // already resolved
+        pendingPlay = false;
+        // Show the YouTube link prominently and explain what happened
+        const ytLink = document.getElementById('btn-yt-link');
+        ytLink.textContent = '▶ Open on YouTube (browser blocked in-app player)';
+        ytLink.style.cssText = 'display:block; text-align:center; color:var(--accent); font-size:15px; font-weight:600; padding:12px 0; text-decoration:none; border:1px solid var(--accent); border-radius:12px;';
+        document.getElementById('countdown-number').textContent = '⚠';
+        document.getElementById('ring-arc').style.stroke = 'var(--text-muted)';
+        document.getElementById('countdown-number').style.color = 'var(--text-muted)';
+        document.getElementById('countdown-number').style.fontSize = '60px';
+      }, 4000);
     }
   } else if (src === 'deezer') {
     startDeezerPlayback(scannedData.dz);
