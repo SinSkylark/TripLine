@@ -378,6 +378,17 @@
 
 <script>
 // ═══════════════════════════════════════════════════════
+//  VERSION
+// ═══════════════════════════════════════════════════════
+const _V = { ts: '2026-06-06 17:10 UTC', commit: 'TBD' };
+console.log(
+  '%c TripLine Scanner %c ' + _V.commit + ' %c ' + _V.ts + ' ',
+  'background:#e8c84a;color:#0a0a0a;font-weight:700;padding:2px 6px;border-radius:3px 0 0 3px',
+  'background:#333;color:#e8c84a;font-weight:600;padding:2px 6px',
+  'background:#1a1a1a;color:#888;padding:2px 6px;border-radius:0 3px 3px 0'
+);
+
+// ═══════════════════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════════════════
 let html5QrCode     = null;
@@ -390,6 +401,7 @@ let ytPlayerReady   = false;
 let ytApiBlocked    = false;  // true if Brave/uBlock blocks youtube API script
 let audioEl         = null;
 let pendingPlay     = false;  // play as soon as YT player is ready (Chrome race)
+let pendingTimer    = null;   // 1.5s fallback — Chrome race vs Safari ITP
 let pendingVideoId  = null;   // video queued before YT API finished loading
 
 // ═══════════════════════════════════════════════════════
@@ -654,9 +666,10 @@ function preloadYouTube(videoId) {
 
 function onYTReady() {
   ytPlayerReady = true;
+  if (pendingTimer) { clearTimeout(pendingTimer); pendingTimer = null; }
   if (pendingPlay) {
     pendingPlay = false;
-    executeYouTubePlay();
+    executeYouTubePlay();   // Chrome race resolved — play in-app
   }
 }
 
@@ -747,18 +760,27 @@ function tapPlay() {
 
   if (src === 'youtube') {
     if (ytPlayerReady) {
-      // In-app playback (Chrome, Firefox — postMessage works fine)
+      // ✅ Chrome / Firefox: IFrame API works, play in-app
       executeYouTubePlay();
     } else {
-      // Safari/Brave: IFrame API blocked by ITP/Shields.
-      // Open YouTube at a random timestamp AND start the 30s countdown here.
-      // Game mechanic is preserved: music plays in YouTube, timer runs in the app.
-      const startSec = randomStartSeconds();
-      window.open(
-        `https://www.youtube.com/watch?v=${scannedData.yt}&t=${startSec}s`,
-        '_blank', 'noopener'
-      );
-      startCountdown(() => showScreen('screen-done'));
+      // Player not ready yet — two possible causes:
+      //   A) Chrome race: API just loaded, player initializing (wait up to 1.5s)
+      //   B) Safari/Brave ITP: API blocked, will never be ready (fall back after 1.5s)
+      pendingPlay = true;
+      document.getElementById('countdown-number').textContent = '…';
+
+      if (pendingTimer) clearTimeout(pendingTimer);
+      pendingTimer = setTimeout(() => {
+        if (!pendingPlay) return;   // Chrome loaded in time — resolved in onYTReady
+        pendingPlay = false;
+        // ✅ Safari/Brave fallback: open YouTube at random offset + run countdown here
+        const startSec = randomStartSeconds();
+        window.open(
+          `https://www.youtube.com/watch?v=${scannedData.yt}&t=${startSec}s`,
+          '_blank', 'noopener'
+        );
+        startCountdown(() => showScreen('screen-done'));
+      }, 1500);
     }
   } else if (src === 'deezer') {
     startDeezerPlayback(scannedData.dz);
