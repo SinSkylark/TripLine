@@ -391,6 +391,7 @@ let ytApiBlocked    = false;  // true if Brave/uBlock blocks youtube API script
 let audioEl         = null;
 let pendingPlay     = false;  // play as soon as YT player is ready
 let pendingTimer    = null;   // timeout — fallback if API never loads
+let pendingVideoId  = null;   // video queued before YT API finished loading
 
 // ═══════════════════════════════════════════════════════
 //  INIT
@@ -585,7 +586,11 @@ function loadYouTubeAPI() {
 }
 
 window.onYouTubeIframeAPIReady = function () {
-  // API loaded — player creation happens in preloadYouTube
+  // API loaded — create player if a video was queued before API finished loading
+  if (pendingVideoId) {
+    preloadYouTube(pendingVideoId);
+    pendingVideoId = null;
+  }
 };
 
 function randomStartSeconds() {
@@ -594,6 +599,12 @@ function randomStartSeconds() {
 }
 
 function preloadYouTube(videoId) {
+  // Guard: YT API might not be loaded yet (race — card scanned before script finished)
+  if (!window.YT || !window.YT.Player) {
+    pendingVideoId = videoId;
+    return;
+  }
+
   ytPlayerReady = false;
 
   if (ytPlayer) {
@@ -732,14 +743,38 @@ function tapPlay() {
       pendingTimer = setTimeout(() => {
         if (!pendingPlay) return;   // already resolved
         pendingPlay = false;
-        // Show the YouTube link prominently and explain what happened
+
+        // Restore ready state so the YouTube link is actually visible
+        document.getElementById('state-ready').style.display  = 'flex';
+        document.getElementById('state-playing').style.display = 'none';
+
+        // Replace TAP TO PLAY with an error message
+        const btn = document.getElementById('btn-tap-play');
+        btn.textContent = 'Playback blocked by browser';
+        btn.style.opacity = '0.4';
+        btn.onclick = null;
+
+        // Make the YouTube link big and obvious
         const ytLink = document.getElementById('btn-yt-link');
-        ytLink.textContent = '▶ Open on YouTube (browser blocked in-app player)';
-        ytLink.style.cssText = 'display:block; text-align:center; color:var(--accent); font-size:15px; font-weight:600; padding:12px 0; text-decoration:none; border:1px solid var(--accent); border-radius:12px;';
-        document.getElementById('countdown-number').textContent = '⚠';
-        document.getElementById('ring-arc').style.stroke = 'var(--text-muted)';
-        document.getElementById('countdown-number').style.color = 'var(--text-muted)';
+        ytLink.textContent = '▶ Open on YouTube instead';
+        ytLink.style.cssText = [
+          'display:block',
+          'text-align:center',
+          'color:var(--accent)',
+          'font-size:16px',
+          'font-weight:600',
+          'padding:14px 0',
+          'text-decoration:none',
+          'border:2px solid var(--accent)',
+          'border-radius:12px',
+          'background:transparent',
+        ].join(';');
+
+        // Dim the ring to show error state
+        document.getElementById('countdown-number').textContent  = '⚠';
+        document.getElementById('countdown-number').style.color  = 'var(--text-muted)';
         document.getElementById('countdown-number').style.fontSize = '60px';
+        document.getElementById('ring-arc').style.stroke         = 'var(--text-muted)';
       }, 4000);
     }
   } else if (src === 'deezer') {
