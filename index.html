@@ -75,33 +75,40 @@
     .logo-title { font-size: 28px; font-weight: 700; letter-spacing: 0.04em; }
     .logo-sub   { font-size: 14px; color: var(--text-muted); letter-spacing: 0.06em; text-transform: uppercase; }
 
-    /* ── Source toggle ── */
-    .source-toggle {
-      display: flex;
+    /* ── Service picker ── */
+    .service-picker {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
       width: 100%;
-      background: var(--surface);
-      border-radius: var(--radius-sm);
-      padding: 4px;
-      gap: 4px;
     }
-    .src-btn {
-      flex: 1;
-      padding: 10px 8px;
-      border: none;
-      border-radius: 8px;
-      background: transparent;
+    .svc-btn {
+      padding: 11px 8px 9px;
+      border: 2px solid transparent;
+      border-radius: var(--radius-sm);
+      background: var(--surface);
       color: var(--text-muted);
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 600;
       cursor: pointer;
-      transition: background 0.15s, color 0.15s;
+      text-align: center;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
       -webkit-tap-highlight-color: transparent;
+      line-height: 1.2;
     }
-    .src-btn.active {
-      background: var(--accent);
-      color: #0a0a0a;
+    .svc-btn .svc-name { display: block; }
+    .svc-btn .svc-sub  { display: block; font-size: 10px; font-weight: 400;
+                         opacity: 0.6; margin-top: 2px; }
+    .svc-btn.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--surface2);
     }
-    .src-btn span { font-size: 11px; display: block; font-weight: 400; opacity: 0.75; margin-top: 1px; }
+    /* Preview spans full width (last button) */
+    .svc-btn:last-child { grid-column: 1 / -1; }
+
+    /* ── Source toggle (legacy, kept for compat) ── */
+    .source-toggle { display: none; }
 
     /* ── Buttons ── */
     .btn {
@@ -281,14 +288,26 @@
       <div class="logo-sub">Card Scanner</div>
     </div>
 
-    <div class="source-toggle">
-      <button class="src-btn" id="src-yt" onclick="setSource('youtube')">
-        ▶ YouTube
-        <span>Random start</span>
+    <div class="service-picker">
+      <button class="svc-btn" id="svc-spotify"    onclick="setService('spotify')">
+        <span class="svc-name">♫ Spotify</span>
+        <span class="svc-sub">Premium</span>
       </button>
-      <button class="src-btn" id="src-dz" onclick="setSource('deezer')">
-        ♪ Deezer
-        <span>Fixed preview</span>
+      <button class="svc-btn" id="svc-appleMusic" onclick="setService('appleMusic')">
+        <span class="svc-name">♪ Apple Music</span>
+        <span class="svc-sub">Subscription</span>
+      </button>
+      <button class="svc-btn" id="svc-tidal"      onclick="setService('tidal')">
+        <span class="svc-name">◈ Tidal</span>
+        <span class="svc-sub">Subscription</span>
+      </button>
+      <button class="svc-btn" id="svc-youtube"    onclick="setService('youtube')">
+        <span class="svc-name">▶ YouTube</span>
+        <span class="svc-sub">Free</span>
+      </button>
+      <button class="svc-btn" id="svc-preview"    onclick="setService('preview')">
+        <span class="svc-name">🎵 Preview 30s</span>
+        <span class="svc-sub">Free · no account needed</span>
       </button>
     </div>
 
@@ -380,7 +399,7 @@
 // ═══════════════════════════════════════════════════════
 //  VERSION
 // ═══════════════════════════════════════════════════════
-const _V = { ts: '2026-06-06 17:10 UTC', commit: 'c05da98' };
+const _V = { ts: '2026-06-06 18:30 UTC', commit: 'TBD-byos' };
 console.log(
   '%c TripLine Scanner %c ' + _V.commit + ' %c ' + _V.ts + ' ',
   'background:#e8c84a;color:#0a0a0a;font-weight:700;padding:2px 6px;border-radius:3px 0 0 3px',
@@ -391,25 +410,23 @@ console.log(
 // ═══════════════════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════════════════
-let html5QrCode     = null;
-let scannedData     = null;   // { yt, dz } or { raw }
-let currentSource   = localStorage.getItem('tl_source') || 'youtube';
-let countdownSec    = 30;
-let countdownTimer  = null;
-let ytPlayer        = null;
-let ytPlayerReady   = false;
-let ytApiBlocked    = false;  // true if Brave/uBlock blocks youtube API script
-let audioEl         = null;
-let pendingPlay     = false;  // play as soon as YT player is ready (Chrome race)
-let pendingTimer    = null;   // 1.5s fallback — Chrome race vs Safari ITP
-let pendingVideoId  = null;   // video queued before YT API finished loading
+let html5QrCode    = null;
+let scannedData    = null;   // { yt, dz, it } or { raw }
+let currentService = localStorage.getItem('tl_service') || 'preview';
+let countdownSec   = 30;
+let countdownTimer = null;
+let audioEl        = null;
+
+// BYOS service resolution (populated in preparePlayer via Odesli + iTunes)
+let resolvedLinks  = {};    // { spotify: url, appleMusic: url, tidal: url, ... }
+let previewUrl     = null;  // iTunes AAC 30s clip URL
+let resolveReady   = false; // true when async lookups complete
 
 // ═══════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════
 (function init() {
-  loadYouTubeAPI();
-  applySourceUI(currentSource);
+  applyServiceUI(currentService);
 })();
 
 // ═══════════════════════════════════════════════════════
@@ -421,29 +438,27 @@ function showScreen(id) {
 }
 
 // ═══════════════════════════════════════════════════════
-//  SOURCE TOGGLE
+//  SERVICE PICKER
 // ═══════════════════════════════════════════════════════
-function setSource(src) {
-  currentSource = src;
-  localStorage.setItem('tl_source', src);
-  applySourceUI(src);
+const SERVICE_LABELS = {
+  spotify:    'Spotify',
+  appleMusic: 'Apple Music',
+  tidal:      'Tidal',
+  youtube:    'YouTube',
+  preview:    'Preview 30s',
+};
+
+function setService(svc) {
+  currentService = svc;
+  localStorage.setItem('tl_service', svc);
+  applyServiceUI(svc);
 }
 
-function applySourceUI(src) {
-  document.getElementById('src-yt').classList.toggle('active', src === 'youtube');
-  document.getElementById('src-dz').classList.toggle('active', src === 'deezer');
-}
-
-function resolveSource(data) {
-  // Return the source we'll actually use, with auto-fallback
-  if (currentSource === 'youtube') {
-    if (data.yt) return 'youtube';
-    if (data.dz) return 'deezer';
-  } else {
-    if (data.dz) return 'deezer';
-    if (data.yt) return 'youtube';
-  }
-  return null;
+function applyServiceUI(svc) {
+  ['spotify','appleMusic','tidal','youtube','preview'].forEach(s => {
+    const btn = document.getElementById('svc-' + s);
+    if (btn) btn.classList.toggle('active', s === svc);
+  });
 }
 
 // ═══════════════════════════════════════════════════════
@@ -452,22 +467,23 @@ function resolveSource(data) {
 function parseQR(text) {
   text = text.trim();
 
-  // New format: tripline:yt=VIDEO_ID&dz=DEEZER_ID
+  // BYOS format: tripline:yt=VIDEO_ID&it=ITUNES_ID[&dz=DEEZER_ID]
   if (text.startsWith('tripline:')) {
     const params = new URLSearchParams(text.slice(9));
     const yt = params.get('yt') || null;
     const dz = params.get('dz') || null;
-    if (yt || dz) return { yt, dz };
+    const it = params.get('it') || null;
+    if (yt || dz || it) return { yt, dz, it };
   }
 
-  // Plain YouTube URLs (backward compat / test cards)
+  // Plain YouTube URLs (backward compat)
   const ytMatch = text.match(
     /(?:youtube\.com\/watch[?&]v=|youtu\.be\/)([A-Za-z0-9_-]{11})/
   );
-  if (ytMatch) return { yt: ytMatch[1], dz: null };
+  if (ytMatch) return { yt: ytMatch[1], dz: null, it: null };
 
   // Plain 11-char YouTube ID
-  if (/^[A-Za-z0-9_-]{11}$/.test(text)) return { yt: text, dz: null };
+  if (/^[A-Za-z0-9_-]{11}$/.test(text)) return { yt: text, dz: null, it: null };
 
   // Anything else — legacy external URL
   return { raw: text };
@@ -534,257 +550,145 @@ async function cancelScanner() {
 }
 
 // ═══════════════════════════════════════════════════════
+//  SERVICE RESOLUTION (Odesli + iTunes lookup)
+// ═══════════════════════════════════════════════════════
+async function loadServiceLinks(data) {
+  resolveReady  = false;
+  resolvedLinks = {};
+  previewUrl    = null;
+  if (!data || !data.it) { resolveReady = true; return; }
+
+  await Promise.all([
+    // Odesli: maps iTunes ID → Spotify, Apple Music, Tidal, Deezer URLs
+    fetch(`https://api.song.link/v1-alpha.1/links?platform=itunes&type=song&id=${data.it}`)
+      .then(r => r.json())
+      .then(d => {
+        for (const [k, v] of Object.entries(d.linksByPlatform || {})) {
+          resolvedLinks[k] = v.url;
+        }
+      })
+      .catch(() => {}),
+
+    // iTunes lookup: 30s AAC preview
+    fetch(`https://itunes.apple.com/lookup?id=${data.it}`)
+      .then(r => r.json())
+      .then(d => { previewUrl = d.results?.[0]?.previewUrl || null; })
+      .catch(() => {}),
+  ]);
+
+  resolveReady = true;
+}
+
+// ═══════════════════════════════════════════════════════
 //  PLAYER SETUP
 // ═══════════════════════════════════════════════════════
 function preparePlayer() {
   stopAudio();
-  pendingPlay = false;
 
-  const src = resolveSource(scannedData);
-  if (!src) {
-    showError('No playable source', 'This card has no YouTube or Deezer ID. Regenerate it with the updated card generator.');
-    return;
-  }
+  const svc = currentService;
+  document.getElementById('source-name').textContent = SERVICE_LABELS[svc] || svc;
+  document.getElementById('player-tip').textContent  =
+    svc === 'preview'
+      ? 'Free 30s clip — plays in-app, no account needed'
+      : 'DJ: tap play, then turn the phone face down';
 
-  // Update source badge
-  document.getElementById('source-name').textContent =
-    src === 'youtube' ? 'YouTube  ·  random start' : 'Deezer  ·  preview clip';
-
-  // Add fallback note if auto-switched
-  const used    = src;
-  const wanted  = currentSource;
-  if (used !== wanted) {
-    const other = wanted === 'youtube' ? 'YouTube' : 'Deezer';
-    document.getElementById('player-tip').textContent =
-      `${other} ID missing — using ${used === 'youtube' ? 'YouTube' : 'Deezer'} fallback`;
-  } else {
-    document.getElementById('player-tip').textContent =
-      'DJ: tap play, then turn the phone face down';
-  }
-
-  // Reset countdown UI
-  resetCountdownUI();
-
-  // Show pre-play state
-  document.getElementById('state-ready').style.display   = 'flex';
-  document.getElementById('state-playing').style.display = 'none';
-
-  // Show YouTube fallback link (visible always so Brave/strict browsers have an out)
+  // YouTube fallback link (always available if card has yt ID)
   const ytLink = document.getElementById('btn-yt-link');
-  if (src === 'youtube' && scannedData.yt) {
-    ytLink.href = 'https://www.youtube.com/watch?v=' + scannedData.yt;
-    ytLink.style.display = 'block';
+  if (scannedData?.yt) {
+    const ts = randomStartSeconds();
+    ytLink.href = `https://www.youtube.com/watch?v=${scannedData.yt}&t=${ts}s`;
+    ytLink.style.display = svc === 'youtube' ? 'none' : 'block';
+    ytLink.textContent   = 'Can\'t play? Open on YouTube ↗';
+    ytLink.style.cssText = ytLink.style.display === 'none'
+      ? 'display:none'
+      : 'display:block;text-align:center;color:var(--text-muted);font-size:13px;text-decoration:underline;padding:4px 0;';
   } else {
     ytLink.style.display = 'none';
   }
 
+  resetCountdownUI();
+  document.getElementById('state-ready').style.display   = 'flex';
+  document.getElementById('state-playing').style.display = 'none';
   showScreen('screen-player');
 
-  // Pre-load YouTube in background (random start so no audio flash at 0:00)
-  if (src === 'youtube' && scannedData.yt) {
-    preloadYouTube(scannedData.yt);
-  }
-}
-
-// ═══════════════════════════════════════════════════════
-//  YOUTUBE
-// ═══════════════════════════════════════════════════════
-function loadYouTubeAPI() {
-  const tag = document.createElement('script');
-  tag.src = 'https://www.youtube.com/iframe_api';
-  tag.onerror = () => { ytApiBlocked = true; };
-  document.head.appendChild(tag);
-}
-
-window.onYouTubeIframeAPIReady = function () {
-  // API loaded — create player if a video was queued before API finished loading
-  if (pendingVideoId) {
-    preloadYouTube(pendingVideoId);
-    pendingVideoId = null;
-  }
-};
-
-function randomStartSeconds() {
-  // Safe range: 30 – 150s  (covers most 3-5min songs without going past the end)
-  return 30 + Math.floor(Math.random() * 120);
-}
-
-let _readyPollInterval = null;
-
-function preloadYouTube(videoId) {
-  // Guard: YT API might not be loaded yet (race — card scanned before script finished)
-  if (!window.YT || !window.YT.Player) {
-    pendingVideoId = videoId;
-    return;
-  }
-
-  ytPlayerReady = false;
-  if (_readyPollInterval) { clearInterval(_readyPollInterval); _readyPollInterval = null; }
-
-  if (ytPlayer) {
-    try { ytPlayer.destroy(); } catch (_) {}
-    ytPlayer = null;
-  }
-
-  // Recreate the target div (destroy removes it from DOM)
-  const container = document.getElementById('yt-container');
-  container.innerHTML = '<div id="yt-iframe"></div>';
-
-  const startAt = randomStartSeconds();
-
-  ytPlayer = new YT.Player('yt-iframe', {
-    height: '2', width: '2',
-    videoId: videoId,
-    playerVars: {
-      autoplay:    0,
-      controls:    0,
-      playsinline: 1,
-      rel:         0,
-      start:       startAt,
-    },
-    events: {
-      onReady:       onYTReady,       // fires in Chrome — keep for non-Safari
-      onStateChange: onYTStateChange,
-      onError:       onYTError,
-    },
-  });
-
-  // Safari blocks the postMessage that triggers onReady.
-  // Poll getPlayerState() directly — works even without the callback.
-  _readyPollInterval = setInterval(() => {
-    if (ytPlayerReady) { clearInterval(_readyPollInterval); _readyPollInterval = null; return; }
-    try {
-      const state = ytPlayer && ytPlayer.getPlayerState && ytPlayer.getPlayerState();
-      // -1 = unstarted (loaded), 0-5 = other states — all mean player is ready
-      if (state !== undefined && state !== null) {
-        clearInterval(_readyPollInterval); _readyPollInterval = null;
-        onYTReady();
-      }
-    } catch (_) {}
-  }, 250);
-}
-
-function onYTReady() {
-  ytPlayerReady = true;
-  if (pendingTimer) { clearTimeout(pendingTimer); pendingTimer = null; }
-  if (pendingPlay) {
-    pendingPlay = false;
-    executeYouTubePlay();   // Chrome race resolved — play in-app
-  }
-}
-
-function onYTStateChange(event) {
-  // YT.PlayerState.PLAYING = 1
-  if (event.data === 1 && countdownTimer === null) {
-    // Playback actually started — kick off countdown
-    startCountdown(() => {
-      try { ytPlayer.stopVideo(); } catch (_) {}
-      showScreen('screen-done');
-    });
-  }
-}
-
-function onYTError() {
-  clearCountdown();
-  stopAudio();
-  // Try Deezer fallback
-  if (scannedData.dz) {
-    document.getElementById('source-name').textContent = 'Deezer  ·  fallback';
-    startDeezerPlayback(scannedData.dz);
-  } else {
-    showError('Playback failed', 'YouTube couldn\'t load this track and no Deezer ID is available. Check the card\'s youtube_id.');
-  }
-}
-
-function executeYouTubePlay() {
-  // Refine start position now that duration may be known
-  try {
-    const dur = ytPlayer.getDuration();
-    if (dur && dur > 60) {
-      const max   = Math.max(35, dur - 35);
-      const start = 30 + Math.floor(Math.random() * (max - 30));
-      ytPlayer.seekTo(start, true);
-    }
-  } catch (_) { /* use preloaded start position */ }
-  ytPlayer.playVideo();
-}
-
-// ═══════════════════════════════════════════════════════
-//  DEEZER
-// ═══════════════════════════════════════════════════════
-let _dzCallbackName = null;
-
-function startDeezerPlayback(trackId) {
-  // Clean up any old JSONP callback
-  if (_dzCallbackName && window[_dzCallbackName]) {
-    delete window[_dzCallbackName];
-  }
-
-  _dzCallbackName = '_dzCb_' + Date.now();
-
-  window[_dzCallbackName] = function (data) {
-    delete window[_dzCallbackName];
-    if (!data || !data.preview) {
-      showError('Track unavailable', 'No Deezer preview for this track. Switch to YouTube or update the card\'s deezer_id.');
-      return;
-    }
-    if (audioEl) { audioEl.pause(); audioEl = null; }
-    audioEl = new Audio(data.preview);
-    audioEl.play().then(() => {
-      startCountdown(() => {
-        audioEl.pause();
-        audioEl = null;
-        showScreen('screen-done');
-      });
-    }).catch(() => {
-      showError('Playback blocked', 'Browser blocked auto-play. Tap "Try Again" and use the Play button.');
-    });
-  };
-
-  const script = document.createElement('script');
-  script.src = `https://api.deezer.com/track/${trackId}?output=jsonp&callback=${_dzCallbackName}`;
-  script.onerror = () => {
-    showError('Deezer error', 'Could not reach Deezer API. Check your connection or switch to YouTube.');
-  };
-  document.head.appendChild(script);
+  // Pre-load Odesli + iTunes preview in background (ready before user taps)
+  loadServiceLinks(scannedData);
 }
 
 // ═══════════════════════════════════════════════════════
 //  TAP PLAY / STOP
 // ═══════════════════════════════════════════════════════
+function randomStartSeconds() {
+  return 30 + Math.floor(Math.random() * 120);   // 30–150 s
+}
+
 function tapPlay() {
   document.getElementById('state-ready').style.display   = 'none';
   document.getElementById('state-playing').style.display = 'block';
+  _doPlay();
+}
 
-  const src = resolveSource(scannedData);
+async function _doPlay() {
+  const svc = currentService;
 
-  if (src === 'youtube') {
-    if (ytPlayerReady) {
-      // ✅ Chrome / Firefox: IFrame API works, play in-app
-      executeYouTubePlay();
-    } else {
-      // Player not ready yet — two possible causes:
-      //   A) Chrome race: API just loaded, player initializing (wait up to 1.5s)
-      //   B) Safari/Brave ITP: API blocked, will never be ready (fall back after 1.5s)
-      pendingPlay = true;
-      document.getElementById('countdown-number').textContent = '…';
-
-      if (pendingTimer) clearTimeout(pendingTimer);
-      pendingTimer = setTimeout(() => {
-        if (!pendingPlay) return;   // Chrome loaded in time — resolved in onYTReady
-        pendingPlay = false;
-        // ✅ Safari/Brave fallback: open YouTube at random offset + run countdown here
-        const startSec = randomStartSeconds();
-        window.open(
-          `https://www.youtube.com/watch?v=${scannedData.yt}&t=${startSec}s`,
-          '_blank', 'noopener'
-        );
-        startCountdown(() => showScreen('screen-done'));
-      }, 1500);
-    }
-  } else if (src === 'deezer') {
-    startDeezerPlayback(scannedData.dz);
+  // Wait up to 3s for Odesli/iTunes resolution if still in flight
+  if (!resolveReady && scannedData?.it) {
+    document.getElementById('countdown-number').textContent = '…';
+    let waited = 0;
+    await new Promise(resolve => {
+      const poll = setInterval(() => {
+        if (resolveReady || ++waited > 15) { clearInterval(poll); resolve(); }
+      }, 200);
+    });
+    resetCountdownUI();
   }
+
+  if (svc === 'preview') {
+    _playPreview();
+  } else if (svc === 'youtube') {
+    _openYouTubeAndCountdown();
+  } else {
+    // Streaming services: open native app via deep-link + run in-app countdown
+    const url = resolvedLinks[svc];
+    if (url) {
+      window.open(url, '_blank', 'noopener');
+      startCountdown(() => showScreen('screen-done'));
+    } else {
+      // Odesli didn't find this service for this track — fall back to YouTube
+      _openYouTubeAndCountdown();
+    }
+  }
+}
+
+function _playPreview() {
+  if (!previewUrl) {
+    // No iTunes preview → fall back to YouTube
+    _openYouTubeAndCountdown();
+    return;
+  }
+  audioEl = new Audio(previewUrl);
+  audioEl.play()
+    .then(() => {
+      startCountdown(() => {
+        if (audioEl) { audioEl.pause(); audioEl = null; }
+        showScreen('screen-done');
+      });
+    })
+    .catch(() => {
+      // iOS autoplay blocked — fall back to YouTube
+      _openYouTubeAndCountdown();
+    });
+}
+
+function _openYouTubeAndCountdown() {
+  if (scannedData?.yt) {
+    const ts = randomStartSeconds();
+    window.open(
+      `https://www.youtube.com/watch?v=${scannedData.yt}&t=${ts}s`,
+      '_blank', 'noopener'
+    );
+  }
+  startCountdown(() => showScreen('screen-done'));
 }
 
 function tapStop() {
@@ -794,14 +698,7 @@ function tapStop() {
 }
 
 function stopAudio() {
-  if (_readyPollInterval) { clearInterval(_readyPollInterval); _readyPollInterval = null; }
-  if (ytPlayer) {
-    try { ytPlayer.stopVideo(); } catch (_) {}
-  }
-  if (audioEl) {
-    audioEl.pause();
-    audioEl = null;
-  }
+  if (audioEl) { audioEl.pause(); audioEl = null; }
 }
 
 // ═══════════════════════════════════════════════════════
