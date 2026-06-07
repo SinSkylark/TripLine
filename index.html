@@ -399,7 +399,7 @@
 // ═══════════════════════════════════════════════════════
 //  VERSION
 // ═══════════════════════════════════════════════════════
-const _V = { ts: '2026-06-06 18:30 UTC', commit: '78f71d0' };
+const _V = { ts: '2026-06-06 19:05 UTC', commit: '78f71d0' };
 console.log(
   '%c TripLine Scanner %c ' + _V.commit + ' %c ' + _V.ts + ' ',
   'background:#e8c84a;color:#0a0a0a;font-weight:700;padding:2px 6px;border-radius:3px 0 0 3px',
@@ -550,31 +550,38 @@ async function cancelScanner() {
 }
 
 // ═══════════════════════════════════════════════════════
-//  SERVICE RESOLUTION (Odesli + iTunes lookup)
+//  SERVICE RESOLUTION (iTunes lookup only — no external CORS dependency)
 // ═══════════════════════════════════════════════════════
+// Why no Odesli: api.song.link blocks CORS from github.io origins.
+// Instead we use the single iTunes lookup (CORS-open, already working) to get:
+//   - previewUrl         → Preview 30s in-app
+//   - trackViewUrl       → Apple Music exact link (same database as iTunes)
+//   - artistName+trackName → search URLs for Spotify / Tidal / YouTube Music
 async function loadServiceLinks(data) {
   resolveReady  = false;
   resolvedLinks = {};
   previewUrl    = null;
   if (!data || !data.it) { resolveReady = true; return; }
 
-  await Promise.all([
-    // Odesli: maps iTunes ID → Spotify, Apple Music, Tidal, Deezer URLs
-    fetch(`https://api.song.link/v1-alpha.1/links?platform=itunes&type=song&id=${data.it}`)
-      .then(r => r.json())
-      .then(d => {
-        for (const [k, v] of Object.entries(d.linksByPlatform || {})) {
-          resolvedLinks[k] = v.url;
-        }
-      })
-      .catch(() => {}),
+  try {
+    const resp = await fetch(`https://itunes.apple.com/lookup?id=${data.it}`);
+    const json = await resp.json();
+    const r    = json.results?.[0];
+    if (r) {
+      previewUrl = r.previewUrl || null;
 
-    // iTunes lookup: 30s AAC preview
-    fetch(`https://itunes.apple.com/lookup?id=${data.it}`)
-      .then(r => r.json())
-      .then(d => { previewUrl = d.results?.[0]?.previewUrl || null; })
-      .catch(() => {}),
-  ]);
+      // Apple Music: iTunes trackViewUrl IS a valid Apple Music link
+      if (r.trackViewUrl) {
+        resolvedLinks.appleMusic = r.trackViewUrl;
+      }
+
+      // Spotify, Tidal, YouTube Music: search URLs (CORS-free, constructed locally)
+      const q = encodeURIComponent(`${r.artistName} ${r.trackName}`);
+      resolvedLinks.spotify      = `https://open.spotify.com/search/${q}`;
+      resolvedLinks.tidal        = `https://tidal.com/search?q=${q}`;
+      resolvedLinks.youtubeMusic = `https://music.youtube.com/search?q=${q}`;
+    }
+  } catch (_) {}
 
   resolveReady = true;
 }
