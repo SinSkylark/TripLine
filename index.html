@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#0a0a0a" />
   <title>TripLine Scanner</title>
+  <link rel="icon" type="image/png" href="favicon.png" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -399,7 +400,7 @@
 // ═══════════════════════════════════════════════════════
 //  VERSION
 // ═══════════════════════════════════════════════════════
-const _V = { ts: '2026-06-06 19:05 UTC', commit: '43cfac0' };
+const _V = { ts: '2026-06-08 17:45 UTC', commit: 'e62eb91' };
 console.log(
   '%c TripLine Scanner %c ' + _V.commit + ' %c ' + _V.ts + ' ',
   'background:#e8c84a;color:#0a0a0a;font-weight:700;padding:2px 6px;border-radius:3px 0 0 3px',
@@ -632,13 +633,46 @@ function randomStartSeconds() {
 function tapPlay() {
   document.getElementById('state-ready').style.display   = 'none';
   document.getElementById('state-playing').style.display = 'block';
-  _doPlay();
+
+  if (currentService === 'preview') {
+    // *** SYNCHRONOUS path — must stay in user-gesture context for iOS/Safari ***
+    // Any await before audio.play() breaks the trust context and Safari blocks it.
+    if (previewUrl) {
+      _startPreviewAudio(previewUrl);
+    } else if (resolveReady) {
+      // iTunes resolved but no preview available → fall back to YouTube
+      _openYouTubeAndCountdown();
+    } else {
+      // iTunes lookup still in-flight — show "…", poll every 100 ms (max 3 s)
+      document.getElementById('countdown-number').textContent = '…';
+      let ticks = 0;
+      const poll = setInterval(() => {
+        if (previewUrl) {
+          clearInterval(poll); resetCountdownUI();
+          _startPreviewAudio(previewUrl);
+        } else if (resolveReady || ++ticks > 30) {
+          clearInterval(poll); resetCountdownUI();
+          _openYouTubeAndCountdown();
+        }
+      }, 100);
+    }
+  } else {
+    _doPlay();    // async fine for streaming services — no audio.play() needed
+  }
+}
+
+// Called synchronously from tapPlay() — audio.play() inside user gesture = Safari OK
+function _startPreviewAudio(url) {
+  audioEl = new Audio(url);
+  audioEl.play()
+    .then(() => startCountdown(() => { stopAudio(); showScreen('screen-done'); }))
+    .catch(() => { stopAudio(); _openYouTubeAndCountdown(); });
 }
 
 async function _doPlay() {
   const svc = currentService;
 
-  // Wait up to 3s for Odesli/iTunes resolution if still in flight
+  // Wait up to 3 s for iTunes resolution (streaming services need resolvedLinks)
   if (!resolveReady && scannedData?.it) {
     document.getElementById('countdown-number').textContent = '…';
     let waited = 0;
@@ -650,41 +684,18 @@ async function _doPlay() {
     resetCountdownUI();
   }
 
-  if (svc === 'preview') {
-    _playPreview();
-  } else if (svc === 'youtube') {
+  if (svc === 'youtube') {
     _openYouTubeAndCountdown();
   } else {
-    // Streaming services: open native app via deep-link + run in-app countdown
+    // Spotify / Apple Music / Tidal — open native app + in-app countdown
     const url = resolvedLinks[svc];
     if (url) {
       window.open(url, '_blank', 'noopener');
       startCountdown(() => showScreen('screen-done'));
     } else {
-      // Odesli didn't find this service for this track — fall back to YouTube
       _openYouTubeAndCountdown();
     }
   }
-}
-
-function _playPreview() {
-  if (!previewUrl) {
-    // No iTunes preview → fall back to YouTube
-    _openYouTubeAndCountdown();
-    return;
-  }
-  audioEl = new Audio(previewUrl);
-  audioEl.play()
-    .then(() => {
-      startCountdown(() => {
-        if (audioEl) { audioEl.pause(); audioEl = null; }
-        showScreen('screen-done');
-      });
-    })
-    .catch(() => {
-      // iOS autoplay blocked — fall back to YouTube
-      _openYouTubeAndCountdown();
-    });
 }
 
 function _openYouTubeAndCountdown() {
